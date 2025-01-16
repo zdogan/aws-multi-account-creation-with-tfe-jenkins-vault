@@ -1,0 +1,54 @@
+pipeline { //Integrated with Jenkins to dynamically pass input parameters:
+    agent {
+        label 'linux01'
+    }
+    parameters {
+        string(name: 'ACCOUNT_NAME', description: 'The name for the new AWS account')
+        password(name: 'VAULT_TOKEN', description: 'Use Vault Dev token for dev accounts and Vault Prd token for prod accounts')
+        password(name: 'ATLAS_TOKEN', description: 'TFE Token')
+        string(name: 'OU_NAME', description: 'Organizational Unit name')
+    }
+    environment {
+ //This could represent the Vault token being passed securely into the pipeline as an environment variable.
+ // It could then be used in the Terraform pipeline to authenticate with Vault, retrieve secrets, and configure your infrastructure securely.
+ //Integration in Jenkins: In your Jenkins pipeline (Jenkinsfile), you've set the environment variable for the Vault token dynamically:
+        VAULT_TOKEN = "${params.VAULT_TOKEN}"
+        ACCOUNT_NAME = "${params.ACCOUNT_NAME}"
+        ATLAS_TOKEN = "${params.ATLAS_TOKEN}"
+        ACCOUNT_SCRIPTS_PATH = '/path/to/scripts' // Ensure this is set to the correct path
+    }
+    stages {
+        stage('Setup Virtual Python Env') {
+            steps {
+                sh '''
+                    virtualenv venv
+                    venv/bin/python --version
+                    venv/bin/pip install hvac
+                '''
+            }
+        }
+        stage('Get Credentials from Vault') {
+            steps {
+                sh 'venv/bin/python ${env.ACCOUNT_SCRIPTS_PATH}/get-creds-from-vault.py > creds.json'
+            }
+        }
+        stage('Get Config') {
+            steps {
+                dir(path: "${env.ACCOUNT_NAME}") {
+                    script {
+                        ROOT_EMAIL = sh(
+                            returnStdout: true, 
+                            script: 'cat config.json | python -c "import sys, json; print(json.load(sys.stdin)[\'ROOT_EMAIL\'])"'
+                        ).trim()
+                        echo "Root Email: ${ROOT_EMAIL}"
+                    }
+                }
+            }
+        }
+        stage('Find OU') {
+            steps {
+                sh 'python ${env.ACCOUNT_SCRIPTS_PATH}/find-ou-by-name.py -o ${params.OU_NAME} | tee ou.json'
+            }
+        }
+    }
+}
