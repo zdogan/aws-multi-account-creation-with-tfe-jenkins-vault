@@ -7,14 +7,13 @@ import os  # To interact with environment variables and file paths
 import argparse  # For handling command-line arguments
 import json  # To handle JSON data
 import sys  # To interact with the Python runtime
-#Developed a Python script to retrieve credentials from Vault:
-def get_vault_client():   #The function initializes an empty string for Vault_url, which will later store the URL of the Vault server.
-    import hvac
-    Vault_url = ""
 
+# Function to initialize a Vault client
+def get_vault_client():
+    Vault_url = ""
     try:
-        Account_name = os.environ["ACCOUNT_NAME"] #Retrieve the ACCOUNT_NAME environment variable
-    except KeyError: #If the environment variable isn't set, it raises an exception and prints an error message.
+        Account_name = os.environ["ACCOUNT_NAME"]
+    except KeyError:
         logging.error("ACCOUNT_NAME is not defined in Environment Vars")
         raise
 
@@ -38,3 +37,39 @@ def get_vault_client():   #The function initializes an empty string for Vault_ur
         raise Exception("Vault authentication failed")
 
     return client
+
+# Function to retrieve a secret from Vault
+def get_secret(client, secret_path):
+    try:
+        response = client.secrets.kv.read_secret_version(path=secret_path)
+        return response["data"]["data"]
+    except Exception as e:
+        logging.error(f"Failed to retrieve secret: {e}")
+        raise
+
+# The main function encapsulates the execution logic
+def main():
+    logging.basicConfig(level=logging.INFO)
+
+    # Suppress warnings about insecure HTTP connections
+    warnings.simplefilter("ignore", urllib3.exceptions.InsecureRequestWarning)
+
+    # Parse command-line arguments
+    parser = argparse.ArgumentParser(description="Retrieve secrets from Vault")
+    parser.add_argument("secret_path", help="Path to the secret in Vault")
+    args = parser.parse_args()
+
+    try:
+        # Initialize Vault client
+        client = get_vault_client()
+
+        # Retrieve the secret
+        secret = get_secret(client, args.secret_path)
+        logging.info(f"Retrieved secret: {json.dumps(secret, indent=2)}")
+    except Exception as e:
+        logging.error(f"Error: {e}")
+        sys.exit(1)
+
+# Entry point of the script
+if __name__ == "__main__":
+    main()
