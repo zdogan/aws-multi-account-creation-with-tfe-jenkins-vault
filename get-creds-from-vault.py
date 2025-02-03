@@ -71,5 +71,6 @@ def main():
         sys.exit(1)
 
 # Entry point of the script
-if __name__ == "__main__":
+if __name__ == "__main__": #If this script is imported as a module in another project, the main() logic will not execute.
     main()
+#The main() function handles parsing command-line arguments using argparse. example usage: python script.py secret/path/to/key
