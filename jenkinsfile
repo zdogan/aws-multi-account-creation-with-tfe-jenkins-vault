@@ -1,4 +1,11 @@
-pipeline { //Integrated with Jenkins to dynamically pass input parameters:
+//Integrated with Jenkins to dynamically pass input parameters:
+
+ //This could represent the Vault token being passed securely into the pipeline as an environment variable.
+ // It could then be used in the Terraform pipeline to authenticate with Vault, retrieve secrets, and configure your infrastructure securely.
+ //Integration in Jenkins: In your Jenkins pipeline (Jenkinsfile), you've set the environment variable for the Vault token dynamically:
+        
+
+pipeline {
     agent {
         label 'linux01'
     }
@@ -7,15 +14,18 @@ pipeline { //Integrated with Jenkins to dynamically pass input parameters:
         password(name: 'VAULT_TOKEN', description: 'Use Vault Dev token for dev accounts and Vault Prd token for prod accounts')
         password(name: 'ATLAS_TOKEN', description: 'TFE Token')
         string(name: 'OU_NAME', description: 'Organizational Unit name')
+        password(name: 'AWS_ACCESS_KEY_ID', description: 'AWS Access Key ID')
+        password(name: 'AWS_SECRET_ACCESS_KEY', description: 'AWS Secret Access Key')
+        string(name: 'EMAIL_ADDRESS', description: 'Email address for the new AWS account')
     }
     environment {
- //This could represent the Vault token being passed securely into the pipeline as an environment variable.
- // It could then be used in the Terraform pipeline to authenticate with Vault, retrieve secrets, and configure your infrastructure securely.
- //Integration in Jenkins: In your Jenkins pipeline (Jenkinsfile), you've set the environment variable for the Vault token dynamically:
         VAULT_TOKEN = "${params.VAULT_TOKEN}"
         ACCOUNT_NAME = "${params.ACCOUNT_NAME}"
         ATLAS_TOKEN = "${params.ATLAS_TOKEN}"
-        ACCOUNT_SCRIPTS_PATH = '/path/to/scripts' // Ensure this is set to the correct path
+        ACCOUNT_SCRIPTS_PATH = '/path/to/scripts'
+        AWS_ACCESS_KEY_ID = "${params.AWS_ACCESS_KEY_ID}"
+        AWS_SECRET_ACCESS_KEY = "${params.AWS_SECRET_ACCESS_KEY}"
+        EMAIL_ADDRESS = "${params.EMAIL_ADDRESS}"
     }
     stages {
         stage('Setup Virtual Python Env') {
@@ -50,5 +60,24 @@ pipeline { //Integrated with Jenkins to dynamically pass input parameters:
                 sh 'python ${env.ACCOUNT_SCRIPTS_PATH}/find-ou-by-name.py -o ${params.OU_NAME} | tee ou.json'
             }
         }
+        stage('Create Member Account') {
+            steps {
+                sh "python create-account.py -a ${params.ACCOUNT_NAME} -e ${params.EMAIL_ADDRESS} | tee account.json"
+            }
+        }
+        stage('Enable CloudTrail') {
+            steps {
+                dir(path: "${params.ACCOUNT_NAME}-account/cloudtrail") {
+                    dir(path: '.terraform') {
+                        deleteDir()
+                    }
+                    sh "terraform init -input=false -backend-config=backend.tfvars"
+                    sh "terraform plan -out=plan.out -input=false -var-file=dev.tfvars -var-file=backend.tfvars -var 'team_account_role_to_assume=$teamAccountRoleToAssume'"
+                    input 'Do you want to apply the plan?'
+                    sh "terraform apply -input=false plan.out"
+                }
+            }
+        }
+        // More stages can be added for additional infrastructure
     }
 }
